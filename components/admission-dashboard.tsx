@@ -148,7 +148,7 @@ export function AdmissionDashboard() {
     <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <header className="mb-6">
         <h1 className="text-2xl font-extrabold tracking-tight text-foreground text-balance sm:text-3xl">
-          모두의 2028대입을 위한 등급 변환기
+          클로이 아빠의 고교 내신 등급 변환기
         </h1>
         <p className="mt-1 text-xs text-muted-foreground">Copyright@All Teachers</p>
         <div className="mt-3 rounded-lg border border-border bg-card px-4 py-3 text-sm">
