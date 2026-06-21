@@ -14,15 +14,19 @@ export type ProgramWithUniv = Program & { univ: string }
 
 export const TRACK_OPTIONS = ["종합", "교과"] as const
 
-export type UnitCategory = "medical" | "ee"
+export type UnitCategory = "medical" | "ee" | "veterinary"
 
 export const UNIT_CATEGORIES: { key: UnitCategory; label: string }[] = [
   { key: "medical", label: "의예/약학" },
   { key: "ee", label: "전기/전자/통신/반도체" },
+  { key: "veterinary", label: "수의예" },
 ]
 
 function matchesUnitCategory(unit: string, category: UnitCategory): boolean {
-  if (category === "medical") return unit.includes("의예") || unit.includes("약학")
+  if (category === "medical") {
+    return ((unit.includes("의예") && !unit.includes("수의예")) || unit.includes("약학"))
+  }
+  if (category === "veterinary") return unit.includes("수의예")
   return ["전기", "전자", "통신", "반도체"].some((keyword) => unit.includes(keyword))
 }
 
@@ -206,30 +210,6 @@ export function getAvailableTracksForUnitCategory(category: UnitCategory): strin
 export function getAvailableTracksForUniversity(university: string): string[] {
   const trackSet = new Set(getUniversityData(university).map((p) => p.track))
   return TRACK_OPTIONS.filter((t) => trackSet.has(t))
-}
-
-/** 산포도용: 연도·대학별 대표 입결(가장 낮은 표시점수) 1건 */
-export function aggregateScatterByUniversity(programs: ProgramWithUniv[]): ProgramWithUniv[] {
-  const map = new Map<string, ProgramWithUniv>()
-
-  for (const program of programs) {
-    const score = displayScore(program)
-    if (score == null) continue
-
-    const key = `${program.year}:${program.univ}`
-    const existing = map.get(key)
-    if (!existing) {
-      map.set(key, program)
-      continue
-    }
-
-    const existingScore = displayScore(existing)
-    if (existingScore == null || score < existingScore) {
-      map.set(key, program)
-    }
-  }
-
-  return [...map.values()]
 }
 
 export function convertFromG5(grade5: number): {

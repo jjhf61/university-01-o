@@ -9,7 +9,7 @@ type Props = {
   programs: (Program & { univ?: string })[]
   userGrade: number
   modeLabel: string
-  labelField?: "unit" | "univ"
+  labelField?: "unit" | "univ" | "univUnit"
   title?: string
   description?: string
   onDotClick?: (rowId: string) => void
@@ -24,11 +24,65 @@ const YEAR_COLORS: Record<number, string> = {
 }
 
 const ZOOM_STEP = 1.35
-const MIN_ZOOM = 0.35
-const MAX_ZOOM = 25
+const DEFAULT_ZOOM = 10
+const MIN_ZOOM = DEFAULT_ZOOM * 0.35
+const MAX_ZOOM = DEFAULT_ZOOM * 25
 const BASE_CHART_WIDTH = 640
+const DOT_STACK_STEP = 34
+const ROW_VERTICAL_PADDING = 56
+const LABEL_OFFSET_PX = 34
 
-type Dot = { score: number; label: string; ratio: number; rowId: string }
+type Dot = { score: number; label: string; typeName: string; ratio: number; rowId: string }
+type PlacedDot = Dot & { yOffset: number; labelAbove: boolean }
+
+function dotStackOffset(index: number, total: number): number {
+  if (total <= 1) return 0
+  const mid = (total - 1) / 2
+  return Math.round((index - mid) * DOT_STACK_STEP)
+}
+
+function layoutStackedDots(dots: Dot[]): PlacedDot[] {
+  const groups = new Map<string, Dot[]>()
+  for (const dot of dots) {
+    const key = dot.score.toFixed(2)
+    const group = groups.get(key)
+    if (group) group.push(dot)
+    else groups.set(key, [dot])
+  }
+
+  for (const group of groups.values()) {
+    group.sort((a, b) => a.label.localeCompare(b.label, "ko"))
+  }
+
+  const counters = new Map<string, number>()
+  return dots.map((dot) => {
+    const key = dot.score.toFixed(2)
+    const group = groups.get(key)!
+    const index = counters.get(key) ?? 0
+    counters.set(key, index + 1)
+    const yOffset = dotStackOffset(index, group.length)
+    const labelAbove = yOffset < 0
+    return { ...dot, yOffset, labelAbove }
+  })
+}
+
+function buildDotLabel(
+  p: Program & { univ?: string },
+  labelField: "unit" | "univ" | "univUnit",
+): string {
+  if (labelField === "univ") return p.univ ?? p.unit
+  if (labelField === "univUnit") return [p.univ, p.unit].filter(Boolean).join(" ")
+  return p.unit
+}
+
+function maxStackSize(dots: Dot[]): number {
+  const counts = new Map<string, number>()
+  for (const dot of dots) {
+    const key = dot.score.toFixed(2)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return Math.max(1, ...counts.values())
+}
 
 export function ScatterPlot({
   programs,
@@ -39,7 +93,7 @@ export function ScatterPlot({
   description,
   onDotClick,
 }: Props) {
-  const [zoom, setZoom] = useState(1)
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM)
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollRatioRef = useRef(0)
 
@@ -65,18 +119,33 @@ export function ScatterPlot({
     const domainMax = Math.max(domainMin + 0.1, hi + pad)
     const domainSpan = Math.max(domainMax - domainMin, 0.2)
 
-    const perYear: Record<number, Dot[]> = { 2023: [], 2024: [], 2025: [] }
+    const perYear: Record<number, PlacedDot[]> = { 2023: [], 2024: [], 2025: [] }
     for (const p of programs) {
       const s = displayScore(p)
       if (s == null || !Number.isFinite(s)) continue
       perYear[p.year].push({
         score: s,
-        label: labelField === "univ" ? (p.univ ?? p.unit) : p.unit,
+        label: buildDotLabel(p, labelField),
+        typeName: p.type,
         ratio: p.ratio,
         rowId: getProgramRowId(p),
       })
     }
-    for (const y of YEARS) perYear[y].sort((a, b) => a.score - b.score)
+    for (const y of YEARS) {
+      perYear[y].sort(
+        (a, b) =>
+          a.score - b.score ||
+          a.label.localeCompare(b.label, "ko") ||
+          a.typeName.localeCompare(b.typeName, "ko"),
+      )
+      perYear[y] = layoutStackedDots(perYear[y])
+    }
+
+    const maxStack = Math.max(...YEARS.map((y) => maxStackSize(perYear[y])), 1)
+    const rowMinHeight = Math.max(
+      168,
+      ROW_VERTICAL_PADDING * 2 + maxStack * DOT_STACK_STEP + LABEL_OFFSET_PX * 2,
+    )
 
     const tickCount = 7
     const ticks = Array.from({ length: tickCount + 1 }, (_, i) =>
@@ -89,6 +158,7 @@ export function ScatterPlot({
       domainSpan,
       ticks,
       perYear,
+      rowMinHeight,
       hasUserGrade: finiteUserGrade != null,
     }
   }, [programs, userGrade, labelField])
@@ -101,7 +171,7 @@ export function ScatterPlot({
   }
 
   useEffect(() => {
-    setZoom(1)
+    setZoom(DEFAULT_ZOOM)
     scrollRatioRef.current = 0
   }, [programs, labelField])
 
@@ -155,7 +225,7 @@ export function ScatterPlot({
               <span className="text-xs">축소</span>
             </Button>
             <span className="min-w-12 px-1 text-center font-mono text-xs tabular-nums text-muted-foreground">
-              {Math.round(zoom * 100)}%
+              {Math.round((zoom / DEFAULT_ZOOM) * 100)}%
             </span>
             <Button
               type="button"
@@ -174,10 +244,10 @@ export function ScatterPlot({
               variant="ghost"
               size="icon-sm"
               aria-label="줌 초기화"
-              disabled={zoom === 1}
+              disabled={zoom === DEFAULT_ZOOM}
               onClick={() => {
                 scrollRatioRef.current = 0
-                setZoom(1)
+                setZoom(DEFAULT_ZOOM)
               }}
             >
               <RotateCcw className="size-3.5" />
@@ -194,7 +264,7 @@ export function ScatterPlot({
               </span>
             ))}
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-0.5 bg-foreground" />
+              <span className="inline-block h-3 w-0 border-l border-dashed border-muted-foreground/70" />
               <span className="text-muted-foreground">사용자 등급</span>
             </span>
           </div>
@@ -203,7 +273,7 @@ export function ScatterPlot({
 
       <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
         {description ??
-          `표시 기준: 70%컷(없으면 50%컷) · 점수가 낮을수록(왼쪽) 우수합니다. 사용자 등급(${modeLabel})은 굵은 세로선으로 표시됩니다.`}
+          `표시 기준: 70%컷(없으면 50%컷) · 점수가 낮을수록(왼쪽) 우수합니다. 사용자 등급(${modeLabel})은 회색 점선으로 표시됩니다.`}
       </p>
 
       <div className="flex">
@@ -212,8 +282,8 @@ export function ScatterPlot({
           {YEARS.map((y) => (
             <div
               key={y}
-              className="flex min-h-24 items-center border-t border-border/60 py-10 text-sm font-bold tabular-nums"
-              style={{ color: YEAR_COLORS[y] }}
+              className="flex items-center justify-center border-t border-border/60 text-sm font-bold tabular-nums"
+              style={{ minHeight: `${base.rowMinHeight}px`, color: YEAR_COLORS[y] }}
             >
               {y}
             </div>
@@ -243,7 +313,7 @@ export function ScatterPlot({
                 userGrade >= base.domainMin &&
                 userGrade <= base.domainMax && (
                   <div
-                    className="pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 -translate-x-1/2 bg-foreground"
+                    className="pointer-events-none absolute top-0 bottom-0 z-20 w-0 -translate-x-1/2 border-l border-dashed border-muted-foreground/70"
                     style={{ left: `${posPx(userGrade)}px` }}
                   >
                     <span className="absolute -top-1 left-1 whitespace-nowrap rounded bg-foreground px-1.5 py-0.5 font-mono text-[10px] text-background tabular-nums">
@@ -255,18 +325,26 @@ export function ScatterPlot({
               {YEARS.map((y) => {
                 const dots = base.perYear[y]
                 return (
-                  <div key={y} className="relative min-h-24 border-t border-border/60 py-10">
-                    <div className="relative min-h-4">
-                      {dots.map((d, i) => {
-                        const labelAbove = i % 2 === 1
-                        return (
+                  <div
+                    key={y}
+                    className="relative border-t border-border/60"
+                    style={{ minHeight: `${base.rowMinHeight}px` }}
+                  >
+                    <div className="absolute inset-0">
+                      <div
+                        className="pointer-events-none absolute inset-x-0 top-1/2 z-0 h-px -translate-y-1/2 bg-border/70"
+                        aria-hidden
+                      />
+                      {dots.map((d) => (
                           <span
                             key={d.rowId}
                             role="button"
                             tabIndex={0}
-                            className="group absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 cursor-pointer hover:z-30"
-                            style={{ left: `${posPx(d.score)}px` }}
-                            title={`${d.label} · ${d.score.toFixed(2)} · 경쟁률 ${d.ratio} · 클릭 시 표에서 보기`}
+                            className="group absolute z-10 -translate-x-1/2 -translate-y-1/2 cursor-pointer hover:z-30"
+                            style={{
+                              left: `${posPx(d.score)}px`,
+                              top: `calc(50% + ${d.yOffset}px)`,
+                            }}
                             onClick={() => onDotClick?.(d.rowId)}
                             onKeyDown={(e) => {
                               if (e.key === "Enter" || e.key === " ") {
@@ -275,25 +353,45 @@ export function ScatterPlot({
                               }
                             }}
                           >
+                            <span className="pointer-events-none absolute left-1/2 bottom-full z-40 mb-1 hidden w-max max-w-[9.5rem] -translate-x-1/2 rounded border border-border bg-popover px-2.5 py-1.5 text-center text-[9px] leading-snug text-popover-foreground shadow-md group-hover:block group-focus-visible:block">
+                              <span className="font-medium">{d.label}</span>
+                              {d.typeName ? (
+                                <>
+                                  <span className="mx-1 text-muted-foreground/60">·</span>
+                                  <span className="text-muted-foreground">{d.typeName}</span>
+                                </>
+                              ) : null}
+                              <span className="mx-1 text-muted-foreground/60">·</span>
+                              <span className="font-mono tabular-nums text-muted-foreground">
+                                {d.score.toFixed(2)}
+                              </span>
+                              <span className="mx-1 text-muted-foreground/60">·</span>
+                              <span className="text-muted-foreground">경쟁률 {d.ratio}</span>
+                            </span>
                             <span
-                              className="block size-3 rounded-full ring-2 ring-card transition-transform group-hover:scale-150 group-focus-visible:scale-150"
+                              className="block size-1.5 rounded-full ring-1 ring-card transition-transform group-hover:scale-150 group-focus-visible:scale-150"
                               style={{ backgroundColor: YEAR_COLORS[y] }}
                             />
                             <span
-                              className={`pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-card/90 px-1 text-[9px] leading-tight text-foreground shadow-sm ${
-                                labelAbove
-                                  ? "bottom-5 mb-0.5"
-                                  : "top-5 mt-0.5"
-                              }`}
+                              className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-card/55 px-1.5 py-0.5 text-[9px] leading-snug text-foreground shadow-sm"
+                              style={
+                                d.labelAbove
+                                  ? { bottom: `${LABEL_OFFSET_PX}px` }
+                                  : { top: `${LABEL_OFFSET_PX}px` }
+                              }
                             >
                               <span className="block text-center">{d.label}</span>
+                              {d.typeName ? (
+                                <span className="block text-center text-[8px] text-muted-foreground">
+                                  {d.typeName}
+                                </span>
+                              ) : null}
                               <span className="block text-center font-mono text-muted-foreground tabular-nums">
                                 {d.score.toFixed(2)}
                               </span>
                             </span>
                           </span>
-                        )
-                      })}
+                      ))}
                       {dots.length === 0 && (
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
                           데이터 없음

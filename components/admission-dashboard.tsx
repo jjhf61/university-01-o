@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react"
 import {
-  aggregateScatterByUniversity,
   convertFromG5,
   getAvailableTracksForUnitCategory,
   getAvailableTracksForUniversity,
@@ -108,13 +107,8 @@ export function AdmissionDashboard() {
 
   const unitCategoryLabel = getUnitCategoryLabel(unitCategory)
 
-  const unitScatterPrograms = useMemo(
-    () => aggregateScatterByUniversity(unitDetailPrograms),
-    [unitDetailPrograms],
-  )
-
   const scatterPrograms =
-    viewMode === "university" ? universityFilteredPrograms : unitScatterPrograms
+    viewMode === "university" ? universityFilteredPrograms : unitDetailPrograms
 
   const tablePrograms =
     viewMode === "university" ? universityFilteredPrograms : unitDetailPrograms
@@ -230,7 +224,7 @@ export function AdmissionDashboard() {
           programs={scatterPrograms}
           userGrade={userGrade}
           modeLabel={gradeModeLabel}
-          labelField={viewMode === "unit" ? "univ" : "unit"}
+          labelField={viewMode === "unit" ? "univUnit" : "unit"}
           title={
             viewMode === "unit"
               ? `${unitCategoryLabel} 지원 가능 대학 산포도 (3개년 비교)`
@@ -238,7 +232,7 @@ export function AdmissionDashboard() {
           }
           description={
             viewMode === "unit"
-              ? `표시 기준: 70%컷(없으면 50%컷) · 대학·연도별 대표 입결(최저 표시점수) · 점수가 낮을수록(왼쪽) 우수 · 사용자 등급(${gradeModeLabel})은 굵은 세로선`
+              ? `표시 기준: 70%컷(없으면 50%컷) · 대학·모집단위별 입결 · 점수가 낮을수록(왼쪽) 우수 · 사용자 등급(${gradeModeLabel})은 회색 점선`
               : undefined
           }
           onDotClick={handleDotClick}
