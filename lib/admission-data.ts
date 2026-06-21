@@ -136,8 +136,10 @@ let admissionCache: StoredProgram[] | null = null
 let convertCache: ConvertRow[] | null = null
 let universitiesCache: string[] | null = null
 
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? ""
+
 async function loadJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: "no-store" })
+  const res = await fetch(`${BASE_PATH}${url}`, { cache: "no-store" })
   if (!res.ok) throw new Error(`${url} 로드 실패 (${res.status})`)
   return res.json() as Promise<T>
 }
